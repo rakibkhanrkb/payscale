@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Calculator, 
   MapPin, 
@@ -15,9 +15,12 @@ import {
   Building2,
   Home,
   Waves,
-  Printer
+  Printer,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment } from 'firebase/firestore';
+import { db, auth } from './firebase';
 
 // --- Constants & Data ---
 
@@ -52,6 +55,15 @@ const LOCATIONS = [
 
 // --- Types ---
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
 interface CalculationResult {
   newBasic: number;
   houseRent: number;
@@ -62,10 +74,68 @@ interface CalculationResult {
   gradeData: typeof GRADES[0];
 }
 
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  // We don't necessarily want to crash the whole app for a counter error
+  // But we log it for the system to see
+}
+
 export default function App() {
   const [grade, setGrade] = useState<number>(9);
   const [currentBasic, setCurrentBasic] = useState<string>('');
   const [location, setLocation] = useState<string>('district_upazila');
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
+  const hasIncremented = useRef(false);
+
+  // Firestore counter logic
+  useEffect(() => {
+    const docRef = doc(db, 'stats', 'visitorCount');
+    
+    // Real-time listener for the counter
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setVisitorCount(docSnap.data().count);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'stats/visitorCount');
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Increment counter when user starts typing or selecting
+  useEffect(() => {
+    if (hasIncremented.current) return;
+    if (currentBasic.length > 0) {
+      const docRef = doc(db, 'stats', 'visitorCount');
+      
+      const doIncrement = async () => {
+        try {
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists()) {
+            await setDoc(docRef, { count: 1 });
+          } else {
+            await updateDoc(docRef, { count: increment(1) });
+          }
+          hasIncremented.current = true;
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, 'stats/visitorCount');
+        }
+      };
+
+      doIncrement();
+    }
+  }, [currentBasic]);
 
   const calculation = useMemo((): CalculationResult | null => {
     const basicNum = parseFloat(currentBasic);
@@ -131,9 +201,17 @@ export default function App() {
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Proposed Fixation Calculator</p>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-            <span className="text-[10px] font-bold text-emerald-700">সরকারি কর্মচারিদের-নবম পে-স্কেল</span>
+          <div className="hidden sm:flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded-full border border-blue-100">
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-[10px] font-bold text-blue-700 whitespace-nowrap">
+                ব্যবহারকারির সংখ্যা: {visitorCount !== null ? bngNum(visitorCount) : '...'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="text-[10px] font-bold text-emerald-700">সরকারি কর্মচারিদের-নবম পে-স্কেল</span>
+            </div>
           </div>
         </div>
       </header>
