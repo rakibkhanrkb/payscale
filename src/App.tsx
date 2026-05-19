@@ -24,6 +24,7 @@ import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, collection, addD
 import { db, auth } from './firebase';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
+import AdSense from './components/AdSense';
 
 // --- Constants & Data ---
 
@@ -114,6 +115,11 @@ export default function App() {
     } else {
       setLoginError('ভুল ইউজারনেম অথবা পাসওয়ার্ড!');
     }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    sessionStorage.removeItem('isAdmin');
   };
 
   useEffect(() => {
@@ -260,6 +266,7 @@ export default function App() {
   if (isAdmin) {
     return <AdminDashboard 
       onBack={() => setIsAdmin(false)} 
+      onLogout={handleAdminLogout}
       visitorCount={visitorCount} 
     />;
   }
@@ -312,7 +319,8 @@ export default function App() {
           
           {/* Left Column: Form */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
               <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-700">
                 <Info className="w-5 h-5 text-emerald-600" />
                 তথ্য প্রদান করুন
@@ -376,14 +384,15 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-slate-800 p-6 rounded-3xl text-slate-300 shadow-lg">
-              <h3 className="text-white font-bold mb-2 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-                ফলাফল কিভাবে কাজ করে?
-              </h3>
-              <p className="text-xs leading-relaxed opacity-80">
-                নতুন মূল বেতন = (২০২৬ এর শুরুর ধাপ - ২০১৫ এর শুরুর ধাপ) × ৫০% + বর্তমান মূল বেতন। এর সাথে বাড়ি ভাড়া, চিকিৎসা ও অন্যান্য ভাতা যুক্ত হয়ে গ্রস বেতন নির্ধারিত হবে।
-              </p>
+            {/* AdSense Sidebar Placeholder */}
+            <div className="bg-white p-4 rounded-3xl border border-slate-200 text-center space-y-4">
+              <div className="bg-slate-50 border border-slate-100 rounded-xl min-h-[250px] flex items-center justify-center overflow-hidden">
+                <AdSense 
+                  adClient="ca-pub-1554941254994753"
+                  adSlot="3666418463"
+                />
+              </div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sponsored Content</p>
             </div>
           </div>
 
@@ -560,6 +569,17 @@ export default function App() {
                     <Info className="w-4 h-4 shrink-0 text-slate-300" />
                     পরামর্শ: বাড়ি ভাড়া ক্যালকুলেশন করার সময় জুলাই -২০২৬ এর মূল বেতন ({currentBasic}) ব্যবহার করা হয়েছে, যা ২০১৫ স্কেলের ধাপ অনুযায়ী।
                   </div>
+
+                  {/* AdSense Bottom Horizontal */}
+                  <div className="bg-white rounded-3xl border border-slate-100 p-2 overflow-hidden shadow-sm">
+                    <div className="bg-slate-50 min-h-[100px] rounded-2xl flex items-center justify-center border border-slate-200 border-dashed overflow-hidden">
+                       <AdSense 
+                         adClient="ca-pub-1554941254994753"
+                         adSlot="3666418463"
+                         adFormat="horizontal"
+                       />
+                    </div>
+                  </div>
                 </motion.div>
               ) : (
                 <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-12 bg-white/50 border-2 border-dashed border-slate-300 rounded-[2.5rem]">
@@ -575,8 +595,88 @@ export default function App() {
         </div>
       </main>
 
+      {/* Structured Content for AdSense SEO */}
+      <section className="max-w-5xl mx-auto px-4 py-12 bg-white rounded-[3rem] border border-slate-100 shadow-sm mt-12 mb-20 overflow-hidden relative">
+        <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-50 rounded-full blur-3xl opacity-50" />
+        <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+          <div>
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-6">ক্যালকুলেটরটি কিভাবে ব্যবহার করবেন?</h2>
+            <div className="space-y-6">
+              {[
+                { step: '০১', title: 'ধাপ ১', desc: 'আপনার বর্তমান পদের গ্রেডটি (১-২০) ড্রপডাউন মেনু থেকে সিলেক্ট করুন।' },
+                { step: '০২', title: 'ধাপ ২', desc: 'জুলাই ২০২৬ এ আপনার যে মূল বেতন (Basic Pay) হবে সেটি ইনপুট বক্সে লিখুন।' },
+                { step: '০৩', title: 'ধাপ ৩', desc: 'আপনার বর্তমান পোস্টিং এলাকা (ঢাকা/অন্যান্য সিটি/জেলা-উপজেলা) সিলেক্ট করুন।' },
+                { step: '০৪', title: 'ধাপ ৪', desc: 'স্বয়ংক্রিয়ভাবে ডানপাশে আপনার নতুন ২০২৬ স্কেলের মূল বেতন ও মোট বেতন প্রদর্শিত হবে।' },
+              ].map((item, idx) => (
+                <div key={idx} className="flex gap-4">
+                  <span className="text-xl font-black text-emerald-200 mt-1">{item.step}</span>
+                  <div>
+                    <h4 className="font-bold text-slate-800">{item.title}</h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 italic text-slate-400 text-xs leading-loose">
+            <h4 className="text-slate-700 font-bold mb-4 not-italic uppercase tracking-widest text-[10px]">ডিসক্লেইমার / Disclaimer</h4>
+            এটি সম্পূর্ণ একটি প্রাক্কলিত ক্যালকুলেটর যা সরকারি কর্মচারীদের সুবিধা বিবেচনা করে তৈরি করা হয়েছে। সরকারি চুরান্ত সিদ্ধান্ত বা গেজেট প্রকাশিত হলে সে অনুযায়ী হিসাব পরিবর্তন হতে পারে। আমরা কোনো প্রকার ভুল হিসাবের জন্য দায়ী থাকব না। এটি শুধুমাত্র ২০২৬ এর প্রস্তাবিত পে-স্কেলের একটি অনলাইন হিসাব নিকাশের মাধ্যম।
+          </div>
+        </div>
+      </section>
+
       <footer className="max-w-5xl mx-auto px-4 py-12 border-t border-slate-200 mt-12 bg-white">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+          <div className="md:col-span-1">
+             <div className="flex items-center gap-2 mb-4">
+               <div className="bg-emerald-600 p-2 rounded-lg">
+                 <Calculator className="w-4 h-4 text-white" />
+               </div>
+               <span className="font-black text-slate-800 tracking-tight">বেতন ২০২৬</span>
+             </div>
+             <p className="text-xs text-slate-500 leading-relaxed font-medium">
+               সরকারি কর্মকর্তা-কর্মচারীদের নতুন প্রস্তাবিত বেতন স্কেল ২০২৬ অনুযায়ী নির্ভুল বেতন নির্ধারণের জন্য একটি নির্ভরযোগ্য অনলাইন টুল।
+             </p>
+          </div>
+          
+          <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-8">
+            <div>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-4">রিসোর্স</h4>
+              <ul className="space-y-2 text-xs font-bold text-slate-500">
+                <li className="hover:text-emerald-600 transition-colors cursor-pointer">ব্যবহার বিধি</li>
+                <li className="hover:text-emerald-600 transition-colors cursor-pointer">জিজ্ঞাসা</li>
+                <li className="hover:text-emerald-600 transition-colors cursor-pointer">যোগাযোগ</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-4">আইনি</h4>
+              <ul className="space-y-2 text-xs font-bold text-slate-500">
+                <li className="hover:text-emerald-600 transition-colors cursor-pointer">গোপনীয়তা নীতি</li>
+                <li className="hover:text-emerald-600 transition-colors cursor-pointer">শর্তাবলী</li>
+                <li className="hover:text-emerald-600 transition-colors cursor-pointer">Disclaimer</li>
+              </ul>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-4">কানেক্ট</h4>
+              <div className="flex gap-3">
+                 <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center hover:bg-emerald-100 hover:text-emerald-600 transition-all cursor-pointer">
+                   <Users className="w-4 h-4" />
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-8 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+          <div className="md:col-span-2 mb-6">
+             {/* AdSense Representative Placement */}
+             <div className="bg-slate-50 rounded-2xl border border-slate-200 min-h-[100px] flex items-center justify-center overflow-hidden shadow-inner">
+               <AdSense 
+                 adClient="ca-pub-1554941254994753"
+                 adSlot="3666418463"
+               />
+             </div>
+          </div>
           <div>
             <h4 className="font-bold text-slate-800 mb-2">গুরুত্বপূর্ণ তথ্য:</h4>
             <p className="text-xs text-slate-500 leading-relaxed font-medium">

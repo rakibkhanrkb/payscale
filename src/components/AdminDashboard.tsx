@@ -10,10 +10,13 @@ import {
   ChevronRight,
   TrendingUp,
   Monitor,
-  Calendar
+  Calendar,
+  LogOut,
+  Trash2,
+  ListFilter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, orderBy, limit, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, Timestamp, deleteDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface VisitorLog {
@@ -26,18 +29,23 @@ interface VisitorLog {
 
 interface AdminDashboardProps {
   onBack: () => void;
+  onLogout: () => void;
   visitorCount: number | null;
 }
 
-export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardProps) {
+export default function AdminDashboard({ onBack, onLogout, visitorCount }: AdminDashboardProps) {
   const [logs, setLogs] = useState<VisitorLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewLimit, setViewLimit] = useState(50);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   useEffect(() => {
+    // Increase fetch limit to allow for more searchability, 
+    // but keep snapshot size reasonable for performance
     const q = query(
       collection(db, 'visitor_logs'),
-      limit(100)
+      limit(1000) 
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -66,7 +74,37 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
   const filteredLogs = logs.filter(log => 
     log.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.userAgent.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ).slice(0, viewLimit);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('এই লগটি নিশ্চিতভাবে ডিলেট করতে চান?')) return;
+    setIsDeleting(id);
+    try {
+      await deleteDoc(doc(db, 'visitor_logs', id));
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert('ডিলেট করতে ব্যর্থ হয়েছে।');
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!window.confirm('সতর্কতা: সমস্ত লগ ডিলিট হয়ে যাবে! আপনি কি নিশ্চিত?')) return;
+    const q = query(collection(db, 'visitor_logs'), limit(500));
+    try {
+      const snapshot = await getDocs(q);
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      alert('সর্বশেষ ৫০০টি লগ ডিলিট করা হয়েছে।');
+    } catch (err) {
+      console.error("Clear error:", err);
+      alert('ক্লিয়ার করতে ব্যর্থ হয়েছে।');
+    }
+  };
 
   const formatDate = (timestamp: Timestamp) => {
     if (!timestamp) return '...';
@@ -102,10 +140,21 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden md:flex flex-col items-end">
-              <span className="text-[10px] font-bold text-slate-400">সর্বমোট ভিজিটর</span>
-              <span className="text-xl font-black text-emerald-400">{visitorCount || '...'}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Status</span>
+              <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Active Session</span>
+              </div>
             </div>
-            <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center font-bold text-slate-900 border-2 border-slate-700">
+            <button 
+              onClick={onLogout}
+              className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-red-500 hover:text-red-400 transition-all font-bold text-xs flex items-center gap-2"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">লগআউট</span>
+            </button>
+            <div className="w-10 h-10 bg-slate-800 rounded-2xl flex items-center justify-center font-black text-emerald-400 border border-slate-700 shadow-inner">
               R
             </div>
           </div>
@@ -117,8 +166,8 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
           {[
             { label: 'মোট ভিজিট', value: visitorCount, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'আজকের লগ', value: logs.length, icon: Clock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'সিস্টেম স্ট্যাটাস', value: 'অনলাইন', icon: Globe, color: 'text-teal-600', bg: 'bg-teal-50' },
+            { label: 'সিস্টেমে লগ', value: logs.length, icon: Clock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'বেস লিমিট', value: '৫০,০০০', icon: Shield, color: 'text-teal-600', bg: 'bg-teal-50' },
             { label: 'গ্রোথ রেট', value: '+৫.২%', icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50' },
           ].map((item, idx) => (
             <motion.div 
@@ -141,23 +190,51 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
 
         <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden mb-12">
           <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div>
+            <div className="flex-1">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-3">
                 <BarChart3 className="w-7 h-7 text-emerald-600" />
                 ভিজিটর আইপি লগ
               </h2>
-              <p className="text-sm text-slate-400 font-medium mt-1">সর্বশেষ ৫০ জন ব্যবহারকারীর তথ্য</p>
+              <div className="flex items-center gap-4 mt-2">
+                <p className="text-sm text-slate-400 font-medium">দেখানো হচ্ছে: {filteredLogs.length} জন</p>
+                <button 
+                  onClick={handleClearAll}
+                  className="text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors uppercase tracking-widest flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  সমস্ত লগ মুছুন
+                </button>
+              </div>
             </div>
             
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
-              <input 
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="আইপি বা ব্রাউজার দিয়ে সার্চ করুন..."
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-medium"
-              />
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              {/* Limit Selector */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
+                <ListFilter className="w-4 h-4 text-slate-400" />
+                <select 
+                  value={viewLimit}
+                  onChange={(e) => setViewLimit(Number(e.target.value))}
+                  className="bg-transparent text-sm font-bold text-slate-600 focus:outline-none cursor-pointer"
+                >
+                  <option value={10}>১০টি</option>
+                  <option value={50}>৫০টি</option>
+                  <option value={100}>১০০টি</option>
+                  <option value={500}>৫০০টি</option>
+                  <option value={1000}>১০০০টি</option>
+                </select>
+              </div>
+
+              {/* Search */}
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
+                <input 
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="আইপি বা ব্রাউজার দিয়ে সার্চ..."
+                  className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all text-sm font-medium"
+                />
+              </div>
             </div>
           </div>
 
@@ -167,14 +244,15 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
                 <tr className="bg-slate-50/50 text-left">
                   <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 italic">IP Address</th>
                   <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 italic">Access Time</th>
-                  <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 italic">Browser Device Info</th>
+                  <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 italic">Browser Info</th>
+                  <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 italic text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {isLoading ? (
                   Array(5).fill(0).map((_, i) => (
                     <tr key={i} className="animate-pulse">
-                      <td colSpan={3} className="px-8 py-10 h-24 bg-slate-50/20"></td>
+                      <td colSpan={4} className="px-8 py-10 h-24 bg-slate-50/20"></td>
                     </tr>
                   ))
                 ) : filteredLogs.length > 0 ? (
@@ -197,19 +275,28 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
                           <span className="text-[10px] text-slate-400 font-medium ml-5 mt-0.5">Automated timestamp</span>
                         </div>
                       </td>
-                      <td className="px-8 py-6 max-w-md">
+                      <td className="px-8 py-6 max-w-xs">
                         <div className="flex items-start gap-4">
                           <Monitor className="w-5 h-5 text-slate-400 mt-1 shrink-0" />
-                          <div className="text-[11px] text-slate-500 font-medium leading-relaxed bg-slate-100 p-3 rounded-xl border border-slate-200/50">
+                          <div className="text-[10px] text-slate-500 font-medium leading-relaxed bg-slate-100 p-2 rounded-xl border border-slate-200/50 line-clamp-2">
                             {log.userAgent}
                           </div>
                         </div>
+                      </td>
+                      <td className="px-8 py-6 text-center">
+                        <button 
+                          onClick={() => handleDelete(log.id)}
+                          disabled={isDeleting === log.id}
+                          className="p-3 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all disabled:opacity-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={3} className="px-8 py-20 text-center text-slate-400 font-bold">
+                    <td colSpan={4} className="px-8 py-20 text-center text-slate-400 font-bold">
                       কোনো লগ পাওয়া যায়নি
                     </td>
                   </tr>
@@ -219,7 +306,10 @@ export default function AdminDashboard({ onBack, visitorCount }: AdminDashboardP
           </div>
           
           <div className="p-8 bg-slate-50/50 border-t border-slate-100 flex items-center justify-center">
-            <button className="flex items-center gap-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors uppercase tracking-widest">
+            <button 
+              onClick={() => setViewLimit(prev => Math.min(prev + 50, 1000))}
+              className="flex items-center gap-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors uppercase tracking-widest"
+            >
               See more history
               <ChevronRight className="w-4 h-4" />
             </button>

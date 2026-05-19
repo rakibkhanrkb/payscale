@@ -5,8 +5,8 @@ service cloud.firestore {
       allow read, write: if true;
     }
     match /visitor_logs/{docId} {
-      allow create, read: if true;
-      allow write, delete: if false; 
+      allow create, read, delete: if true;
+      allow update: if false; 
     }
     match /{document=**} {
       allow read, write: if true;
