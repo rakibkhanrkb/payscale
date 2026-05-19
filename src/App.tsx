@@ -16,11 +16,14 @@ import {
   Home,
   Waves,
   Printer,
-  Users
+  Users,
+  ShieldAlert
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from './firebase';
+import AdminLogin from './components/AdminLogin';
+import AdminDashboard from './components/AdminDashboard';
 
 // --- Constants & Data ---
 
@@ -95,12 +98,85 @@ export default function App() {
   const [currentBasic, setCurrentBasic] = useState<string>('');
   const [location, setLocation] = useState<string>('district_upazila');
   const [visitorCount, setVisitorCount] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const hasIncremented = useRef(false);
 
-  // Fetch count once on load to save read quota (onSnapshot is expensive for global counters)
+  // Admin Login Handler
+  const handleAdminLogin = (u: string, p: string) => {
+    if (u === 'rakib' && p === 'rakib580') {
+      setIsAdmin(true);
+      setShowAdminLogin(false);
+      setLoginError('');
+      // Save session
+      sessionStorage.setItem('isAdmin', 'true');
+    } else {
+      setLoginError('ভুল ইউজারনেম অথবা পাসওয়ার্ড!');
+    }
+  };
+
+  useEffect(() => {
+    // Check session on load
+    if (sessionStorage.getItem('isAdmin') === 'true') {
+      setIsAdmin(true);
+    }
+  }, []);
+
+  // Visitor Logging & Counter logic
   useEffect(() => {
     const docRef = doc(db, 'stats', 'visitorCount');
     
+    const logVisit = async () => {
+      console.log('Logging visit started...');
+      // 1. Fetch IP
+      let userIp = 'Unknown';
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        if (ipResponse.ok) {
+          const ipData = await ipResponse.json();
+          userIp = ipData.ip;
+          console.log('Fetched IP:', userIp);
+        } else {
+          // Fallback
+          const fbResponse = await fetch('https://ipapi.co/json/');
+          if (fbResponse.ok) {
+            const fbData = await fbResponse.json();
+            userIp = fbData.ip;
+          }
+        }
+      } catch (ipErr) {
+        console.warn('Failed to fetch user IP:', ipErr);
+      }
+
+      // 2. Log to visitor_logs
+      try {
+        await addDoc(collection(db, 'visitor_logs'), {
+          ip: userIp,
+          timestamp: serverTimestamp(),
+          userAgent: navigator.userAgent,
+          page: 'salary_calculator'
+        });
+        console.log('Successfully logged to Firestore visitor_logs');
+      } catch (logErr) {
+        console.error('Firestore Log Error:', logErr);
+      }
+
+      // 3. Increment total count (once per user overall via localStorage)
+      if (!localStorage.getItem('payscale_visitor_counted')) {
+        try {
+          // Optimistic update
+          setVisitorCount(prev => (prev !== null ? prev + 1 : 1));
+          // DB increment
+          await setDoc(docRef, { count: increment(1) }, { merge: true });
+          localStorage.setItem('payscale_visitor_counted', 'true');
+          console.log('Successfully incremented visitor count');
+        } catch (incErr) {
+          console.warn('Failed to increment visitor count:', incErr);
+        }
+      }
+    };
+
     const fetchCount = async () => {
       try {
         const docSnap = await getDoc(docRef);
@@ -115,7 +191,7 @@ export default function App() {
             await setDoc(docRef, { count: 1 });
             setVisitorCount(1);
           } catch (initErr) {
-             // Handle init error separately if needed
+             console.error('Failed to init counter:', initErr);
           }
         }
       } catch (error) {
@@ -128,41 +204,8 @@ export default function App() {
     };
  
     fetchCount();
+    logVisit();
   }, []);
-
-  // Increment counter when user starts typing or selecting
-  useEffect(() => {
-    if (hasIncremented.current || currentBasic.length === 0) return;
-    
-    // Check if counted in this session specifically
-    if (localStorage.getItem('payscale_visitor_counted')) {
-      hasIncremented.current = true;
-      return;
-    }
-
-    hasIncremented.current = true;
-    const docRef = doc(db, 'stats', 'visitorCount');
-    
-    const doIncrement = async () => {
-      try {
-        // Optimistic update for the current user
-        setVisitorCount(prev => (prev !== null ? prev + 1 : 1));
-        
-        // Atomically increment the count in Firestore
-        // setDoc with merge: true handles creation if it hasn't happened yet
-        await setDoc(docRef, { count: increment(1) }, { merge: true });
-        localStorage.setItem('payscale_visitor_counted', 'true');
-      } catch (err) {
-        if (err instanceof Error && err.message.includes('Quota exceeded')) {
-           console.warn('Firestore Write Quota exceeded');
-        } else {
-           handleFirestoreError(err, OperationType.WRITE, 'stats/visitorCount');
-        }
-      }
-    };
-
-    doIncrement();
-  }, [currentBasic]);
 
   const calculation = useMemo((): CalculationResult | null => {
     const basicNum = parseFloat(currentBasic);
@@ -214,8 +257,26 @@ export default function App() {
     return num.toLocaleString('bn-BD');
   };
 
+  if (isAdmin) {
+    return <AdminDashboard 
+      onBack={() => setIsAdmin(false)} 
+      visitorCount={visitorCount} 
+    />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-emerald-100 selection:text-emerald-900">
+      {/* Admin Login Overlay */}
+      <AnimatePresence>
+        {showAdminLogin && (
+          <AdminLogin 
+            onLogin={handleAdminLogin}
+            onCancel={() => setShowAdminLogin(false)}
+            error={loginError}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Navbar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -229,12 +290,15 @@ export default function App() {
             </div>
           </div>
           <div className="hidden sm:flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded-full border border-blue-100">
-              <Users className="w-3.5 h-3.5 text-blue-600" />
+            <button 
+              onClick={() => setShowAdminLogin(true)}
+              className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors group"
+            >
+              <Users className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
               <span className="text-[10px] font-bold text-blue-700 whitespace-nowrap">
                 ব্যবহারকারির সংখ্যা: {visitorCount !== null ? bngNum(visitorCount) : '...'}
               </span>
-            </div>
+            </button>
             <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
               <span className="text-[10px] font-bold text-emerald-700">সরকারি কর্মচারিদের-নবম পে-স্কেল</span>
@@ -524,7 +588,14 @@ export default function App() {
           </div>
           <div className="flex flex-col md:items-end gap-3 text-slate-400">
             <div className="flex items-center gap-4 mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest">Calculated by Assistant Network Engineer, DoICT</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest leading-none">Calculated by Assistant Network Engineer, DoICT</span>
+              <button 
+                onClick={() => setShowAdminLogin(true)}
+                className="opacity-20 hover:opacity-100 transition-opacity"
+                title="Admin Login"
+              >
+                <ShieldAlert className="w-4 h-4" />
+              </button>
             </div>
             <p className="text-[10px] font-medium opacity-60">© ২০২৬ সরকারি বেতন বিশেষজ্ঞ টিম (প্রস্তাবিত)। সর্বস্বত্ব সংরক্ষিত।</p>
           </div>
