@@ -3,7 +3,7 @@
   "appId": "1:348254590631:web:c56efabc10f8390aa46d82",
   "apiKey": "AIzaSyAf42_FKJndzPYOCTIbloqFSpaPg2OGCEA",
   "authDomain": "payscale-d7367.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-53cdbb74-4187-4b03-868b-22f47797f30c",
+  "firestoreDatabaseId": "(default)",
   "storageBucket": "payscale-d7367.firebasestorage.app",
   "messagingSenderId": "348254590631",
   "measurementId": ""

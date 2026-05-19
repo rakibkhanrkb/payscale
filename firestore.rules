@@ -1,27 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
     match /{document=**} {
-      allow read, write: if false;
-    }
-    
-    function isValidStats(data) {
-      return data.keys().hasAll(['count']) &&
-             data.keys().size() == 1 &&
-             data.count is number;
-    }
-
-    match /stats/visitorCount {
-      // Publicly readable so we can see the counter
-      allow read: if true;
-      // Allow creation if it starts reasonably (0 or 1)
-      allow create: if isValidStats(request.resource.data) && 
-                     request.resource.data.count >= 0 && 
-                     request.resource.data.count <= 100;
-      // Allow update ONLY if incrementing
-      allow update: if isValidStats(request.resource.data) && 
-                     request.resource.data.count > resource.data.count;
+      allow read, write: if true;
     }
   }
 }

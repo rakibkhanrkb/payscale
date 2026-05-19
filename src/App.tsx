@@ -97,44 +97,71 @@ export default function App() {
   const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const hasIncremented = useRef(false);
 
-  // Firestore counter logic
+  // Fetch count once on load to save read quota (onSnapshot is expensive for global counters)
   useEffect(() => {
     const docRef = doc(db, 'stats', 'visitorCount');
     
-    // Real-time listener for the counter
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setVisitorCount(docSnap.data().count);
+    const fetchCount = async () => {
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && typeof data.count === 'number') {
+            setVisitorCount(data.count);
+          }
+        } else {
+          // Initialize if it doesn't exist
+          try {
+            await setDoc(docRef, { count: 1 });
+            setVisitorCount(1);
+          } catch (initErr) {
+             // Handle init error separately if needed
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Quota exceeded')) {
+          console.warn('Firestore Read Quota exceeded');
+        } else {
+          handleFirestoreError(error, OperationType.GET, 'stats/visitorCount');
+        }
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'stats/visitorCount');
-    });
-
-    return () => unsubscribe();
+    };
+ 
+    fetchCount();
   }, []);
 
   // Increment counter when user starts typing or selecting
   useEffect(() => {
-    if (hasIncremented.current) return;
-    if (currentBasic.length > 0) {
-      const docRef = doc(db, 'stats', 'visitorCount');
-      
-      const doIncrement = async () => {
-        try {
-          const docSnap = await getDoc(docRef);
-          if (!docSnap.exists()) {
-            await setDoc(docRef, { count: 1 });
-          } else {
-            await updateDoc(docRef, { count: increment(1) });
-          }
-          hasIncremented.current = true;
-        } catch (err) {
-          handleFirestoreError(err, OperationType.WRITE, 'stats/visitorCount');
-        }
-      };
-
-      doIncrement();
+    if (hasIncremented.current || currentBasic.length === 0) return;
+    
+    // Check if counted in this session specifically
+    if (localStorage.getItem('payscale_visitor_counted')) {
+      hasIncremented.current = true;
+      return;
     }
+
+    hasIncremented.current = true;
+    const docRef = doc(db, 'stats', 'visitorCount');
+    
+    const doIncrement = async () => {
+      try {
+        // Optimistic update for the current user
+        setVisitorCount(prev => (prev !== null ? prev + 1 : 1));
+        
+        // Atomically increment the count in Firestore
+        // setDoc with merge: true handles creation if it hasn't happened yet
+        await setDoc(docRef, { count: increment(1) }, { merge: true });
+        localStorage.setItem('payscale_visitor_counted', 'true');
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('Quota exceeded')) {
+           console.warn('Firestore Write Quota exceeded');
+        } else {
+           handleFirestoreError(err, OperationType.WRITE, 'stats/visitorCount');
+        }
+      }
+    };
+
+    doIncrement();
   }, [currentBasic]);
 
   const calculation = useMemo((): CalculationResult | null => {
